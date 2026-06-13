@@ -1,0 +1,12 @@
+# Claude Code
+IssuesTodo/.claude/
+
+# Personal data files
+todo.md
+issues.md
+issues.done.json
+
+# .NET build output
+bin/
+obj/
+publish/

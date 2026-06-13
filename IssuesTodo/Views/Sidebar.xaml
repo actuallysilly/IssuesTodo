@@ -1,0 +1,100 @@
+<UserControl x:Class="IssuesTodo.Views.Sidebar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:IssuesTodo.ViewModels">
+    <DockPanel Background="{DynamicResource MaterialDesign.Brush.Card.Background}">
+
+        <!-- Header bar -->
+        <Border DockPanel.Dock="Top" Padding="14,8,8,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
+                            ToolTip="New Project" Click="NewProject_Click"
+                            Width="32" Height="32" Padding="4">
+                        <materialDesign:PackIcon Kind="Plus" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
+                            ToolTip="Settings" Click="Settings_Click"
+                            Width="32" Height="32" Padding="4">
+                        <materialDesign:PackIcon Kind="Cog" Width="16" Height="16"/>
+                    </Button>
+                </StackPanel>
+                <TextBlock Text="Issues.TODO"
+                           Style="{StaticResource MaterialDesignSubtitle2TextBlock}"
+                           VerticalAlignment="Center" Opacity="0.7"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Category / project tree -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Categories}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:CategoryViewModel}">
+                        <Expander IsExpanded="{Binding IsExpanded}" Margin="0,4,0,0">
+                            <Expander.Header>
+                                <TextBlock Text="{Binding Name}"
+                                           Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                                           FontWeight="SemiBold" Opacity="0.6"
+                                           Margin="0,0,0,2"/>
+                            </Expander.Header>
+
+                            <ItemsControl ItemsSource="{Binding Projects}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:ProjectViewModel}">
+                                        <Border x:Name="Row" Padding="18,7,10,7" Margin="8,2,8,0"
+                                                CornerRadius="8"
+                                                Cursor="Hand" Background="Transparent"
+                                                MouseLeftButtonUp="ProjectRow_Click">
+                                            <Border.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Open in VS Code"
+                                                              Command="{Binding OpenInCodeCommand}"/>
+                                                    <MenuItem Header="Open repository"
+                                                              Command="{Binding OpenRepoCommand}"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="Set root folder..." Click="SetRootFolder_Click"/>
+                                                    <MenuItem Header="Reset root folder" Click="ResetRootFolder_Click"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="Set repository link..." Click="SetRepoLink_Click"/>
+                                                    <MenuItem Header="Remove repository link" Click="RemoveRepoLink_Click"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="Archive"
+                                                              Command="{Binding ArchiveCommand}"/>
+                                                </ContextMenu>
+                                            </Border.ContextMenu>
+                                            <DockPanel>
+                                                <!-- Open task count badge -->
+                                                <Border DockPanel.Dock="Right"
+                                                        CornerRadius="8" Padding="5,1" Margin="6,0,0,0"
+                                                        Background="{DynamicResource MaterialDesign.Brush.Primary}"
+                                                        Visibility="{Binding HasOpenTasks, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="{Binding OpenTaskCount}"
+                                                               FontSize="10" FontWeight="Bold"
+                                                               Foreground="White"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}"
+                                                           Style="{StaticResource MaterialDesignBody2TextBlock}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </Border>
+                                        <DataTemplate.Triggers>
+                                            <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Row" Property="Background" Value="#14FFFFFF"/>
+                                            </Trigger>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter TargetName="Row" Property="Background"
+                                                        Value="{DynamicResource MaterialDesign.Brush.Primary}"/>
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Expander>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>
