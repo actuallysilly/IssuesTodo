@@ -2,13 +2,13 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-        Title="New Project" Width="420" Height="260"
+        Width="440" Height="Auto" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
         Style="{StaticResource MaterialDesignWindow}"
         TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
         Background="{DynamicResource MaterialDesign.Brush.Background}">
     <StackPanel Margin="24">
-        <TextBlock Text="New Project"
+        <TextBlock x:Name="HeadingText"
                    Style="{StaticResource MaterialDesignHeadline6TextBlock}"
                    Margin="0,0,0,20"/>
 
@@ -22,16 +22,27 @@
                  materialDesign:HintAssist.Hint="Project name"
                  materialDesign:HintAssist.IsFloating="True"
                  Style="{StaticResource MaterialDesignOutlinedTextBox}"
-                 Margin="0,0,0,24"
+                 Margin="0,0,0,16"
                  KeyDown="Name_KeyDown"/>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <!-- Folder path (link mode only) -->
+        <DockPanel x:Name="FolderPanel" Margin="0,0,0,16" Visibility="Collapsed">
+            <Button DockPanel.Dock="Right" Content="BROWSE"
+                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                    Click="Browse_Click" Margin="8,0,0,0"/>
+            <TextBox x:Name="FolderBox"
+                     materialDesign:HintAssist.Hint="Project folder path"
+                     materialDesign:HintAssist.IsFloating="True"
+                     Style="{StaticResource MaterialDesignOutlinedTextBox}"/>
+        </DockPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="CANCEL"
                     Style="{StaticResource MaterialDesignFlatButton}"
                     Click="Cancel_Click" Margin="0,0,8,0"/>
-            <Button Content="CREATE"
+            <Button x:Name="AcceptButton"
                     Style="{StaticResource MaterialDesignRaisedButton}"
-                    Click="Create_Click"/>
+                    Click="Accept_Click"/>
         </StackPanel>
     </StackPanel>
 </Window>

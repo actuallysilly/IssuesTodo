@@ -15,4 +15,14 @@ public class AppSettings
 
     /// Repository links, keyed by "Category|ProjectName".
     public Dictionary<string, string> ProjectRepos { get; set; } = [];
+
+    public bool ShowMaybeProjects { get; set; } = false;
+
+    // Win32 MOD_* flags: 0x0001=Alt, 0x0002=Ctrl, 0x0004=Shift, 0x0008=Win
+    public uint HotkeyModifiers { get; set; } = 0x0002 | 0x0004; // Ctrl+Shift
+    public uint HotkeyVirtualKey { get; set; } = 0x49;           // I
+
+    // "never", "1w", "2w", "1month"
+    public string ReviewFrequency { get; set; } = "1month";
+    public string LastReviewReminder { get; set; } = "";
 }

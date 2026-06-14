@@ -25,6 +25,26 @@
         <!-- Main content -->
         <DockPanel Grid.Column="2">
 
+            <!-- High-priority nag banner -->
+            <Border DockPanel.Dock="Top"
+                    Visibility="{Binding NagVisible, Converter={StaticResource BoolToVis}}"
+                    Background="#B71C1C" Margin="20,12,20,0" Padding="16,10" CornerRadius="8">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource MaterialDesignIconButton}"
+                            Command="{Binding DismissNagCommand}"
+                            Foreground="White" Width="28" Height="28" Padding="4">
+                        <materialDesign:PackIcon Kind="Close" Width="16" Height="16"/>
+                    </Button>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <materialDesign:PackIcon Kind="Alert" Width="18" Height="18"
+                                                 Foreground="White" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding NagMessage}" Foreground="White"
+                                   FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- General todo — pinned above all project-based tasks -->
             <Border DockPanel.Dock="Top" Margin="20,16,20,0" Padding="20,14,20,12"
                     CornerRadius="8"
@@ -58,7 +78,7 @@
                     </DockPanel>
 
                     <!-- List -->
-                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer MaxHeight="184" VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding GeneralTodos}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:TaskViewModel}">

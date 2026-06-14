@@ -23,11 +23,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _newGeneralTodoText = "";
     [ObservableProperty] private TaskPriority _newGeneralTodoPriority = TaskPriority.Normal;
 
+    [ObservableProperty] private bool _nagVisible = false;
+    [ObservableProperty] private string _nagMessage = "";
+
+    public bool ShowMaybeProjects => _settings.Current.ShowMaybeProjects;
+
     public IEnumerable<TaskPriority> PriorityOptions { get; } = Enum.GetValues<TaskPriority>();
 
-    // Carries in-session done/undone toggles across reloads (e.g. triggered by adding a task)
-    // until they're persisted on exit, keyed by task id.
+    // Carries in-session done/undone toggles across reloads until persisted on exit.
     private readonly Dictionary<string, bool> _pendingToggles = new();
+    private bool _nagDismissed = false;
+    private List<CategoryGroup> _allParsedCategories = [];
 
     public bool HasSelectedProject => SelectedProject != null;
     public AppSettings Settings => _settings.Current;
@@ -61,7 +67,6 @@ public partial class MainViewModel : ObservableObject
     {
         var prevSelected = SelectedProject?.Name;
 
-        // Capture any in-session toggles before the view models get rebuilt
         foreach (var task in Categories.SelectMany(c => c.Projects).SelectMany(p => p.Tasks))
         {
             if (task.IsDone != task.WasAlreadyDone) _pendingToggles[task.Model.Id] = task.IsDone;
@@ -71,6 +76,7 @@ public partial class MainViewModel : ObservableObject
         List<CategoryGroup> cats;
         try { cats = _issues.ParseIssues(_settings.Current.IssuesFilePath); }
         catch { cats = []; }
+        _allParsedCategories = cats;
 
         var done = _issues.ReadDone(_settings.Current.DoneFilePath);
         var doneSet = done.Done.ToHashSet();
@@ -84,6 +90,7 @@ public partial class MainViewModel : ObservableObject
                 foreach (var proj in cat.Projects)
                 {
                     if (archived.Contains(proj.Name)) continue;
+                    if (proj.IsMaybe && !_settings.Current.ShowMaybeProjects) continue;
 
                     var key = FolderKey(cat.Name, proj.Name);
 
@@ -95,26 +102,38 @@ public partial class MainViewModel : ObservableObject
 
                     proj.RepoUrl = _settings.Current.ProjectRepos.TryGetValue(key, out var repoUrl) ? repoUrl : null;
 
-                    var pvm = new ProjectViewModel(proj,
+                    var capturedPvm = default(ProjectViewModel)!;
+                    capturedPvm = new ProjectViewModel(proj,
                         p => { if (p.FolderPath != null) _projects.OpenInVSCode(p.FolderPath); },
                         p => { if (p.RepoUrl != null) _projects.OpenUrl(p.RepoUrl); },
+                        p => { if (p.FolderPath != null) _projects.OpenFolder(p.FolderPath); },
                         p => ArchiveProject(p),
                         p => AddTask(p));
 
+                    capturedPvm.OnEditComment = (tvm, comment) => EditTaskComment(capturedPvm, tvm, comment);
+                    capturedPvm.ReorderCallback = orderedTexts => ReorderTasks(capturedPvm, orderedTexts);
+
                     foreach (var task in proj.Tasks)
                     {
-                        var capturedPvm = pvm;
+                        var capturedTask = capturedPvm;
                         var wasAlreadyDone = doneSet.Contains(task.Id);
                         var isDone = _pendingToggles.TryGetValue(task.Id, out var pending) ? pending : wasAlreadyDone;
 
-                        // Persisting to done.json is deferred until exit (FlushPendingCompletions),
-                        // so completed tasks stay visible with a strikethrough for the rest of the session.
-                        pvm.Tasks.Add(new TaskViewModel(task, isDone, wasAlreadyDone,
-                            (t, _) => capturedPvm.Refresh(),
-                            (t, newText, newPriority) => EditTask(capturedPvm, t, newText, newPriority)));
+                        capturedPvm.Tasks.Add(new TaskViewModel(task, isDone, wasAlreadyDone,
+                            (t, isDoneNow) =>
+                            {
+                                if (isDoneNow)
+                                {
+                                    _issues.MarkDone(_settings.Current.DoneFilePath, t.Model);
+                                    _issues.RemoveTask(_settings.Current.IssuesFilePath, capturedTask.Category, capturedTask.Name, t.Model.Text);
+                                }
+                                capturedTask.Refresh();
+                            },
+                            (t, newText, newPriority, newType) => EditTask(capturedTask, t, newText, newPriority, newType),
+                            t => ShowCommentEditor(capturedTask, t)));
                     }
 
-                    cvm.Projects.Add(pvm);
+                    cvm.Projects.Add(capturedPvm);
                 }
                 return cvm;
             })
@@ -127,7 +146,7 @@ public partial class MainViewModel : ObservableObject
         GeneralTodos = new ObservableCollection<TaskViewModel>(
             generalTodoItems.Select(item => new TaskViewModel(item, isDone: false, wasAlreadyDone: false,
                 onDoneChanged: (t, isDone) => { if (isDone) RemoveGeneralTodo(t); },
-                onEdit: (t, newText, newPriority) => EditGeneralTodo(t, newText, newPriority)))
+                onEdit: (t, newText, newPriority, newType) => EditGeneralTodo(t, newText, newPriority)))
         );
 
         IsLoading = false;
@@ -135,6 +154,55 @@ public partial class MainViewModel : ObservableObject
         if (prevSelected != null)
             SelectedProject = Categories.SelectMany(c => c.Projects).FirstOrDefault(p => p.Name == prevSelected);
         SelectedProject ??= Categories.FirstOrDefault()?.Projects.FirstOrDefault();
+
+        if (!_nagDismissed) UpdateNag();
+    }
+
+    private void UpdateNag()
+    {
+        var hpByProject = Categories
+            .SelectMany(c => c.Projects)
+            .SelectMany(p => p.OpenTasks.Select(t => (task: t, proj: p)))
+            .Where(x => x.task.Model.Priority == TaskPriority.High && !x.task.IsDone)
+            .GroupBy(x => x.proj.Name)
+            .ToList();
+
+        if (hpByProject.Count > 0)
+        {
+            var total = hpByProject.Sum(g => g.Count());
+            var projNames = string.Join(", ", hpByProject.Select(g => g.Key));
+            var taskWord = total == 1 ? "task" : "tasks";
+            NagMessage = $"{total} high priority {taskWord} need attention — {projNames}";
+            NagVisible = true;
+        }
+        else
+        {
+            NagVisible = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleMaybeProjects()
+    {
+        _settings.Current.ShowMaybeProjects = !_settings.Current.ShowMaybeProjects;
+        _settings.Save();
+        OnPropertyChanged(nameof(ShowMaybeProjects));
+        Reload();
+    }
+
+    [RelayCommand]
+    private void DismissNag()
+    {
+        _nagDismissed = true;
+        NagVisible = false;
+    }
+
+    private void ShowCommentEditor(ProjectViewModel pvm, TaskViewModel tvm)
+    {
+        var window = Application.Current.MainWindow;
+        var dialog = new Views.CommentDialog(tvm.Model.Text, tvm.Model.Comment) { Owner = window };
+        if (dialog.ShowDialog() == true)
+            EditTaskComment(pvm, tvm, dialog.Comment);
     }
 
     private void AddTask(ProjectViewModel pvm)
@@ -142,16 +210,25 @@ public partial class MainViewModel : ObservableObject
         var text = pvm.NewTaskText.Trim();
         if (string.IsNullOrWhiteSpace(text)) return;
 
-        _issues.AddTask(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, text, pvm.NewTaskPriority);
+        _issues.AddTask(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, text, pvm.NewTaskPriority, pvm.NewTaskType);
         pvm.NewTaskText = "";
         pvm.NewTaskPriority = TaskPriority.Normal;
-        // FileWatcher triggers Reload automatically
+        pvm.NewTaskType = TaskType.Dev;
     }
 
-    private void EditTask(ProjectViewModel pvm, TaskViewModel task, string newText, TaskPriority newPriority)
+    private void EditTask(ProjectViewModel pvm, TaskViewModel task, string newText, TaskPriority newPriority, TaskType newType)
     {
-        _issues.EditTask(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, task.Model.Text, newText, newPriority);
-        // FileWatcher triggers Reload automatically
+        _issues.EditTask(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, task.Model.Text, newText, newPriority, newType);
+    }
+
+    private void EditTaskComment(ProjectViewModel pvm, TaskViewModel task, string? comment)
+    {
+        _issues.EditComment(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, task.Model.Text, comment);
+    }
+
+    private void ReorderTasks(ProjectViewModel pvm, IList<string> orderedTexts)
+    {
+        _issues.ReorderTasks(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, orderedTexts);
     }
 
     [RelayCommand]
@@ -207,6 +284,56 @@ public partial class MainViewModel : ObservableObject
         Reload();
     }
 
+    public void ToggleMaybeProject(ProjectViewModel pvm)
+    {
+        _issues.ToggleMaybeProject(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name);
+        // FileWatcher triggers Reload
+    }
+
+    public void PromoteMaybeProject(string projectName)
+    {
+        var proj = _allParsedCategories.SelectMany(c => c.Projects).FirstOrDefault(p => p.Name == projectName && p.IsMaybe);
+        if (proj != null)
+            _issues.ToggleMaybeProject(_settings.Current.IssuesFilePath, proj.Category, projectName);
+    }
+
+    public void ShowReviewReminderIfDue(System.Windows.Window owner)
+    {
+        var freq = _settings.Current.ReviewFrequency;
+        if (freq == "never") return;
+
+        int days = freq switch { "1w" => 7, "2w" => 14, _ => 30 };
+
+        if (!string.IsNullOrEmpty(_settings.Current.LastReviewReminder) &&
+            DateTime.TryParse(_settings.Current.LastReviewReminder, out var last) &&
+            (DateTime.UtcNow - last).TotalDays < days)
+            return;
+
+        var archived = _settings.Current.ArchivedProjects.ToList();
+        var maybes   = _allParsedCategories.SelectMany(c => c.Projects)
+                           .Where(p => p.IsMaybe).Select(p => p.Name).ToList();
+
+        if (archived.Count == 0 && maybes.Count == 0) return;
+
+        _settings.Current.LastReviewReminder = DateTime.UtcNow.ToString("O");
+        _settings.Save();
+
+        var dialog = new Views.ReviewReminderDialog(this, archived, maybes) { Owner = owner };
+        dialog.ShowDialog();
+    }
+
+    public void DeleteProject(ProjectViewModel pvm)
+    {
+        _issues.DeleteProject(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name);
+
+        var key = FolderKey(pvm.Category, pvm.Name);
+        _settings.Current.ProjectFolders.Remove(key);
+        _settings.Current.ProjectRepos.Remove(key);
+        _settings.Current.ArchivedProjects.Remove(pvm.Name);
+        _settings.Save();
+        // FileWatcher triggers Reload
+    }
+
     public void UnarchiveProject(string projectName)
     {
         _settings.Current.ArchivedProjects.Remove(projectName);
@@ -236,13 +363,41 @@ public partial class MainViewModel : ObservableObject
         Reload();
     }
 
-    private static string FolderKey(string category, string projectName) => $"{category}|{projectName}";
+    public void RenameProject(ProjectViewModel pvm, string newName)
+    {
+        _issues.RenameProject(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, newName);
+
+        var oldKey = FolderKey(pvm.Category, pvm.Name);
+        var newKey = FolderKey(pvm.Category, newName);
+
+        if (_settings.Current.ProjectFolders.Remove(oldKey, out var folder))
+            _settings.Current.ProjectFolders[newKey] = folder;
+
+        if (_settings.Current.ProjectRepos.Remove(oldKey, out var repo))
+            _settings.Current.ProjectRepos[newKey] = repo;
+
+        if (_settings.Current.ArchivedProjects.Remove(pvm.Name))
+            _settings.Current.ArchivedProjects.Add(newName);
+
+        _settings.Save();
+        // FileWatcher triggers Reload
+    }
 
     public void CreateProject(string category, string name)
     {
         _projects.CreateProject(_settings.Current.DevRoot, category, name, _settings.Current.IssuesFilePath);
         _issues.AddProject(_settings.Current.IssuesFilePath, category, name);
-        // FileWatcher triggers Reload automatically
+    }
+
+    public void LinkExistingProject(string category, string name, string? folderPath)
+    {
+        _issues.AddProject(_settings.Current.IssuesFilePath, category, name);
+        if (!string.IsNullOrWhiteSpace(folderPath))
+        {
+            _settings.Current.ProjectFolders[FolderKey(category, name)] = folderPath;
+            _settings.Save();
+        }
+        // FileWatcher triggers Reload
     }
 
     public void ApplySettings()
@@ -253,4 +408,6 @@ public partial class MainViewModel : ObservableObject
     }
 
     public IEnumerable<string> ExistingCategories => Categories.Select(c => c.Name).Distinct();
+
+    private static string FolderKey(string category, string projectName) => $"{category}|{projectName}";
 }

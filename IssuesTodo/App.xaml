@@ -14,6 +14,7 @@
 
             <!-- Converters -->
             <conv:PriorityToBrushConverter x:Key="PriorityToBrush"/>
+            <conv:PriorityTypeToBrushConverter x:Key="PriorityTypeToBrush"/>
             <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <conv:BoolToVisibilityConverter x:Key="InvertBoolToVis" Invert="True"/>
         </ResourceDictionary>

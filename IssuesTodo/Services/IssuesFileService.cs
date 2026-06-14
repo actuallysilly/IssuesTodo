@@ -40,8 +40,32 @@ public class IssuesFileService
         CategoryGroup? currentCat = null;
         Project? currentProj = null;
 
+        // Buffered task: collect comment lines before flushing
+        (string id, string text, TaskPriority priority, TaskType type)? pendingTask = null;
+        var pendingComment = new List<string>();
+
+        void FlushPendingTask()
+        {
+            if (pendingTask == null || currentProj == null) return;
+            var comment = pendingComment.Count > 0
+                ? string.Join("\n", pendingComment.Select(l => l.TrimStart())).Trim()
+                : null;
+            currentProj.Tasks.Add(new TaskItem
+            {
+                Id = pendingTask.Value.id,
+                Text = pendingTask.Value.text,
+                ProjectName = currentProj.Name,
+                Priority = pendingTask.Value.priority,
+                Type = pendingTask.Value.type,
+                Comment = comment
+            });
+            pendingTask = null;
+            pendingComment.Clear();
+        }
+
         void FlushProject()
         {
+            FlushPendingTask();
             if (currentProj != null) currentCat?.Projects.Add(currentProj);
             currentProj = null;
         }
@@ -66,38 +90,67 @@ public class IssuesFileService
             if (line.StartsWith("## ", StringComparison.Ordinal))
             {
                 FlushProject();
-                currentProj = new Project
-                {
-                    Name = line[3..].Trim(),
-                    Category = currentCat?.Name ?? ""
-                };
+                var rawName = line[3..].Trim();
+                var isMaybe = rawName.StartsWith("?", StringComparison.Ordinal);
+                var projName = isMaybe ? rawName[1..].TrimStart() : rawName;
+                currentProj = new Project { Name = projName, Category = currentCat?.Name ?? "", IsMaybe = isMaybe };
                 continue;
             }
 
-            if (currentProj == null || string.IsNullOrWhiteSpace(line)) continue;
+            if (currentProj == null) continue;
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                // Blank line ends any pending comment block
+                FlushPendingTask();
+                continue;
+            }
 
             var trimmed = line.TrimStart();
-            TaskPriority priority = TaskPriority.Normal;
-            string text;
 
-            if (trimmed.StartsWith("-hp ", StringComparison.Ordinal))      { priority = TaskPriority.High; text = trimmed[4..]; }
-            else if (trimmed.StartsWith("-lp ", StringComparison.Ordinal)) { priority = TaskPriority.Low;  text = trimmed[4..]; }
-            else if (trimmed.StartsWith("* ", StringComparison.Ordinal))   { text = trimmed[2..]; }
-            else if (trimmed.StartsWith("- ", StringComparison.Ordinal))   { text = trimmed[2..]; }
-            else continue;
-
-            currentProj.Tasks.Add(new TaskItem
+            if (TryParseTaskPrefix(trimmed, out var priority, out var rawText))
             {
-                Id = ComputeId(currentProj.Name, text),
-                Text = text,
-                ProjectName = currentProj.Name,
-                Priority = priority
-            });
+                FlushPendingTask();
+                var (displayText, taskType) = ParseTaskText(rawText);
+                pendingTask = (ComputeId(currentProj.Name, displayText), displayText, priority, taskType);
+                continue;
+            }
+
+            // Non-task, non-header, non-blank line after a task = comment
+            if (pendingTask != null)
+            {
+                pendingComment.Add(line);
+                continue;
+            }
         }
 
         FlushCategory();
         return categories;
     }
+
+    private static bool TryParseTaskPrefix(string trimmed, out TaskPriority priority, out string text)
+    {
+        if (trimmed.StartsWith("-hp ", StringComparison.Ordinal)) { priority = TaskPriority.High;     text = trimmed[4..]; return true; }
+        if (trimmed.StartsWith("-lp ", StringComparison.Ordinal)) { priority = TaskPriority.Low;      text = trimmed[4..]; return true; }
+        if (trimmed.StartsWith("-ep ", StringComparison.Ordinal)) { priority = TaskPriority.Optional; text = trimmed[4..]; return true; }
+        if (trimmed.StartsWith("* ", StringComparison.Ordinal))   { priority = TaskPriority.Normal;   text = trimmed[2..]; return true; }
+        if (trimmed.StartsWith("- ", StringComparison.Ordinal))   { priority = TaskPriority.Normal;   text = trimmed[2..]; return true; }
+        priority = TaskPriority.Normal;
+        text = "";
+        return false;
+    }
+
+    private const string HumanMarker = "[h] ";
+
+    public static (string displayText, TaskType type) ParseTaskText(string raw)
+    {
+        if (raw.StartsWith(HumanMarker, StringComparison.Ordinal))
+            return (raw[HumanMarker.Length..], TaskType.Human);
+        return (raw, TaskType.Dev);
+    }
+
+    public static string EncodeTaskText(string displayText, TaskType type) =>
+        type == TaskType.Human ? HumanMarker + displayText : displayText;
 
     // Replicates the server.js MD5: MD5(sectionName + "|" + text).slice(0, 8)
     private static string ComputeId(string sectionName, string text)
@@ -143,63 +196,36 @@ public class IssuesFileService
         File.WriteAllText(donePath, JsonSerializer.Serialize(data, JsonOpts), Encoding.UTF8);
     }
 
-    public void AddTask(string issuesPath, string category, string projectName, string text, TaskPriority priority)
+    public void AddTask(string issuesPath, string category, string projectName, string text, TaskPriority priority, TaskType type = TaskType.Dev)
     {
         var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
 
         var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
         if (catIndex < 0) return;
 
-        int projIndex = -1;
-        for (int i = catIndex + 1; i < lines.Count; i++)
-        {
-            if (lines[i].StartsWith("# ", StringComparison.Ordinal)) break;
-            if (lines[i].TrimEnd() == $"## {projectName}") { projIndex = i; break; }
-        }
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
         if (projIndex < 0) return;
 
-        int sectionEnd = projIndex + 1;
-        while (sectionEnd < lines.Count
-               && !lines[sectionEnd].StartsWith("# ", StringComparison.Ordinal)
-               && !lines[sectionEnd].StartsWith("## ", StringComparison.Ordinal))
-            sectionEnd++;
-
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
         int insertAt = sectionEnd;
         while (insertAt > projIndex + 1 && string.IsNullOrWhiteSpace(lines[insertAt - 1]))
             insertAt--;
 
-        var prefix = priority switch
-        {
-            TaskPriority.High => "-hp ",
-            TaskPriority.Low => "-lp ",
-            _ => "- "
-        };
-        lines.Insert(insertAt, prefix + text);
-
+        lines.Insert(insertAt, PriorityPrefix(priority) + EncodeTaskText(text, type));
         File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
     }
 
-    public void EditTask(string issuesPath, string category, string projectName, string oldText, string newText, TaskPriority newPriority)
+    public void EditTask(string issuesPath, string category, string projectName, string oldText, string newText, TaskPriority newPriority, TaskType newType = TaskType.Dev)
     {
         var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
 
         var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
         if (catIndex < 0) return;
 
-        int projIndex = -1;
-        for (int i = catIndex + 1; i < lines.Count; i++)
-        {
-            if (lines[i].StartsWith("# ", StringComparison.Ordinal)) break;
-            if (lines[i].TrimEnd() == $"## {projectName}") { projIndex = i; break; }
-        }
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
         if (projIndex < 0) return;
 
-        var prefix = newPriority switch
-        {
-            TaskPriority.High => "-hp ",
-            TaskPriority.Low => "-lp ",
-            _ => "- "
-        };
+        var prefix = PriorityPrefix(newPriority);
 
         for (int i = projIndex + 1; i < lines.Count; i++)
         {
@@ -207,16 +233,11 @@ public class IssuesFileService
                 break;
 
             var trimmed = lines[i].TrimStart();
-            string text;
-            if (trimmed.StartsWith("-hp ", StringComparison.Ordinal)) text = trimmed[4..];
-            else if (trimmed.StartsWith("-lp ", StringComparison.Ordinal)) text = trimmed[4..];
-            else if (trimmed.StartsWith("* ", StringComparison.Ordinal)) text = trimmed[2..];
-            else if (trimmed.StartsWith("- ", StringComparison.Ordinal)) text = trimmed[2..];
-            else continue;
+            if (!TryParseTaskPrefix(trimmed, out _, out var rawText)) continue;
+            var (displayText, _) = ParseTaskText(rawText);
+            if (displayText != oldText) continue;
 
-            if (text != oldText) continue;
-
-            lines[i] = prefix + newText;
+            lines[i] = prefix + EncodeTaskText(newText, newType);
             File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
             return;
         }
@@ -229,33 +250,183 @@ public class IssuesFileService
         var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
         if (catIndex < 0) return;
 
-        int projIndex = -1;
-        for (int i = catIndex + 1; i < lines.Count; i++)
-        {
-            if (lines[i].StartsWith("# ", StringComparison.Ordinal)) break;
-            if (lines[i].TrimEnd() == $"## {projectName}") { projIndex = i; break; }
-        }
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
         if (projIndex < 0) return;
 
-        for (int i = projIndex + 1; i < lines.Count; i++)
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
+
+        for (int i = projIndex + 1; i < sectionEnd; i++)
         {
-            if (lines[i].StartsWith("# ", StringComparison.Ordinal) || lines[i].StartsWith("## ", StringComparison.Ordinal))
-                break;
-
             var trimmed = lines[i].TrimStart();
-            string lineText;
-            if (trimmed.StartsWith("-hp ", StringComparison.Ordinal)) lineText = trimmed[4..];
-            else if (trimmed.StartsWith("-lp ", StringComparison.Ordinal)) lineText = trimmed[4..];
-            else if (trimmed.StartsWith("* ", StringComparison.Ordinal)) lineText = trimmed[2..];
-            else if (trimmed.StartsWith("- ", StringComparison.Ordinal)) lineText = trimmed[2..];
-            else continue;
-
+            if (!TryParseTaskPrefix(trimmed, out _, out var rawLineText)) continue;
+            var (lineText, _) = ParseTaskText(rawLineText);
             if (lineText != text) continue;
 
-            lines.RemoveAt(i);
+            // Remove task line + its comment lines
+            int removeCount = 1;
+            while (i + removeCount < sectionEnd
+                   && !TryParseTaskPrefix(lines[i + removeCount].TrimStart(), out _, out _)
+                   && !string.IsNullOrWhiteSpace(lines[i + removeCount]))
+                removeCount++;
+
+            lines.RemoveRange(i, removeCount);
             File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
             return;
         }
+    }
+
+    public void EditComment(string issuesPath, string category, string projectName, string taskText, string? comment)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
+        if (projIndex < 0) return;
+
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
+
+        int taskLineIndex = -1;
+        for (int i = projIndex + 1; i < sectionEnd; i++)
+        {
+            if (!TryParseTaskPrefix(lines[i].TrimStart(), out _, out var rawText)) continue;
+            var (displayText, _) = ParseTaskText(rawText);
+            if (displayText != taskText) continue;
+            taskLineIndex = i;
+            break;
+        }
+        if (taskLineIndex < 0) return;
+
+        // Remove existing comment lines immediately after the task
+        int commentStart = taskLineIndex + 1;
+        int commentEnd = commentStart;
+        while (commentEnd < sectionEnd
+               && !TryParseTaskPrefix(lines[commentEnd].TrimStart(), out _, out _)
+               && !string.IsNullOrWhiteSpace(lines[commentEnd]))
+            commentEnd++;
+
+        lines.RemoveRange(commentStart, commentEnd - commentStart);
+
+        // Insert new comment if non-empty
+        if (!string.IsNullOrWhiteSpace(comment))
+        {
+            var commentLines = comment.Split('\n')
+                .Select(l => "  " + l.TrimEnd())
+                .ToArray();
+            for (int i = commentLines.Length - 1; i >= 0; i--)
+                lines.Insert(commentStart, commentLines[i]);
+        }
+
+        File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
+    }
+
+    public void ReorderTasks(string issuesPath, string category, string projectName, IList<string> orderedTexts)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
+        if (projIndex < 0) return;
+
+        int sectionStart = projIndex + 1;
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
+
+        // Collect task blocks: task line + its comment lines
+        var blocks = new List<(string text, List<string> rawLines)>();
+        int idx = sectionStart;
+        while (idx < sectionEnd)
+        {
+            var line = lines[idx];
+            if (!TryParseTaskPrefix(line.TrimStart(), out _, out var rawText)) { idx++; continue; }
+            var (text, _) = ParseTaskText(rawText);
+
+            var block = new List<string> { line };
+            idx++;
+            while (idx < sectionEnd
+                   && !TryParseTaskPrefix(lines[idx].TrimStart(), out _, out _)
+                   && !string.IsNullOrWhiteSpace(lines[idx]))
+            {
+                block.Add(lines[idx]);
+                idx++;
+            }
+            blocks.Add((text, block));
+        }
+
+        // Build ordered output: requested order first, then any remaining (e.g. done tasks)
+        var ordered = new List<(string text, List<string> rawLines)>();
+        foreach (var t in orderedTexts)
+        {
+            var b = blocks.FirstOrDefault(x => x.text == t);
+            if (b.rawLines != null) ordered.Add(b);
+        }
+        foreach (var b in blocks)
+        {
+            if (!orderedTexts.Contains(b.text)) ordered.Add(b);
+        }
+
+        lines.RemoveRange(sectionStart, sectionEnd - sectionStart);
+        int insertAt = sectionStart;
+        foreach (var b in ordered)
+        {
+            foreach (var bl in b.rawLines) { lines.Insert(insertAt, bl); insertAt++; }
+        }
+
+        File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
+    }
+
+    public void RenameProject(string issuesPath, string category, string oldName, string newName)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+
+        int projIndex = FindProjectIndex(lines, catIndex, oldName);
+        if (projIndex < 0) return;
+
+        var isMaybe = lines[projIndex][3..].Trim().StartsWith("?", StringComparison.Ordinal);
+        lines[projIndex] = isMaybe ? $"## ?{newName}" : $"## {newName}";
+        File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
+    }
+
+    public void ToggleMaybeProject(string issuesPath, string category, string projectName)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
+        if (projIndex < 0) return;
+
+        var rawName = lines[projIndex][3..].Trim();
+        lines[projIndex] = rawName.StartsWith("?", StringComparison.Ordinal)
+            ? $"## {rawName[1..].TrimStart()}"
+            : $"## ?{rawName}";
+
+        File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
+    }
+
+    public void DeleteProject(string issuesPath, string category, string projectName)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
+        if (projIndex < 0) return;
+
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
+        // Trim trailing blank lines within the section
+        while (sectionEnd > projIndex + 1 && string.IsNullOrWhiteSpace(lines[sectionEnd - 1]))
+            sectionEnd--;
+
+        lines.RemoveRange(projIndex, sectionEnd - projIndex);
+        File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
     }
 
     public List<TaskItem> ParseGeneralTodos(string path)
@@ -265,13 +436,16 @@ public class IssuesFileService
         var tasks = new List<TaskItem>();
         foreach (var raw in File.ReadAllLines(path, Encoding.UTF8))
         {
-            if (!TryParseTaskLine(raw, out var priority, out var text)) continue;
+            var trimmed = raw.TrimStart();
+            if (!TryParseTaskPrefix(trimmed, out var priority, out var rawText)) continue;
+            var (text, type) = ParseTaskText(rawText);
             tasks.Add(new TaskItem
             {
                 Id = ComputeId("__general__", text),
                 Text = text,
                 ProjectName = "General",
-                Priority = priority
+                Priority = priority,
+                Type = type
             });
         }
         return tasks;
@@ -289,7 +463,8 @@ public class IssuesFileService
 
         for (int i = 0; i < lines.Count; i++)
         {
-            if (!TryParseTaskLine(lines[i], out _, out var text) || text != oldText) continue;
+            var trimmed = lines[i].TrimStart();
+            if (!TryParseTaskPrefix(trimmed, out _, out var text) || text != oldText) continue;
             lines[i] = PriorityPrefix(newPriority) + newText;
             File.WriteAllLines(path, lines, Encoding.UTF8);
             return;
@@ -303,35 +478,18 @@ public class IssuesFileService
 
         for (int i = 0; i < lines.Count; i++)
         {
-            if (!TryParseTaskLine(lines[i], out _, out var lineText) || lineText != text) continue;
+            var trimmed = lines[i].TrimStart();
+            if (!TryParseTaskPrefix(trimmed, out _, out var lineText) || lineText != text) continue;
             lines.RemoveAt(i);
             File.WriteAllLines(path, lines, Encoding.UTF8);
             return;
         }
     }
 
-    private static string PriorityPrefix(TaskPriority priority) => priority switch
-    {
-        TaskPriority.High => "-hp ",
-        TaskPriority.Low => "-lp ",
-        _ => "- "
-    };
-
-    private static bool TryParseTaskLine(string line, out TaskPriority priority, out string text)
-    {
-        var trimmed = line.TrimStart();
-        if (trimmed.StartsWith("-hp ", StringComparison.Ordinal))      { priority = TaskPriority.High;   text = trimmed[4..]; return true; }
-        if (trimmed.StartsWith("-lp ", StringComparison.Ordinal))      { priority = TaskPriority.Low;    text = trimmed[4..]; return true; }
-        if (trimmed.StartsWith("* ", StringComparison.Ordinal))        { priority = TaskPriority.Normal; text = trimmed[2..]; return true; }
-        if (trimmed.StartsWith("- ", StringComparison.Ordinal))        { priority = TaskPriority.Normal; text = trimmed[2..]; return true; }
-        priority = TaskPriority.Normal;
-        text = "";
-        return false;
-    }
-
-    public void AddProject(string issuesPath, string category, string projectName)
+    public void AddProject(string issuesPath, string category, string projectName, bool isMaybe = false)
     {
         var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+        var heading = isMaybe ? $"## ?{projectName}" : $"## {projectName}";
 
         var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
         if (catIndex < 0)
@@ -339,19 +497,52 @@ public class IssuesFileService
             lines.Add("");
             lines.Add($"# {category}");
             lines.Add("");
-            lines.Add($"## {projectName}");
+            lines.Add(heading);
             lines.Add("");
         }
         else
         {
-            // Insert before the next # heading or at end of file
             int insertAt = catIndex + 1;
             while (insertAt < lines.Count && !lines[insertAt].StartsWith("# ", StringComparison.Ordinal))
                 insertAt++;
             lines.Insert(insertAt, "");
-            lines.Insert(insertAt, $"## {projectName}");
+            lines.Insert(insertAt, heading);
         }
 
         File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
     }
+
+    private static int FindProjectIndex(List<string> lines, int catIndex, string projectName)
+    {
+        for (int i = catIndex + 1; i < lines.Count; i++)
+        {
+            if (lines[i].StartsWith("# ", StringComparison.Ordinal)) break;
+            if (!lines[i].StartsWith("## ", StringComparison.Ordinal)) continue;
+            var rawName = lines[i][3..].Trim();
+            if (rawName.StartsWith("?", StringComparison.Ordinal)) rawName = rawName[1..].TrimStart();
+            if (rawName == projectName) return i;
+        }
+        return -1;
+    }
+
+    private static string PriorityPrefix(TaskPriority priority) => priority switch
+    {
+        TaskPriority.High     => "-hp ",
+        TaskPriority.Low      => "-lp ",
+        TaskPriority.Optional => "-ep ",
+        _                     => "- "
+    };
+
+    private static int ProjectSectionEnd(List<string> lines, int projIndex)
+    {
+        int end = projIndex + 1;
+        while (end < lines.Count
+               && !lines[end].StartsWith("# ", StringComparison.Ordinal)
+               && !lines[end].StartsWith("## ", StringComparison.Ordinal))
+            end++;
+        return end;
+    }
+
+    private static bool TryParseTaskLine(string line, out TaskPriority priority, out string text)
+        => TryParseTaskPrefix(line.TrimStart(), out priority, out text);
 }

@@ -11,6 +11,11 @@
                 <!-- Action buttons -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource MaterialDesignIconButton}"
+                            Command="{Binding OpenFolderCommand}"
+                            ToolTip="Open folder in Explorer">
+                        <materialDesign:PackIcon Kind="FolderOpenOutline" Width="18" Height="18"/>
+                    </Button>
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
                             Command="{Binding OpenInCodeCommand}"
                             ToolTip="Open folder in VS Code">
                         <materialDesign:PackIcon Kind="CodeBraces" Width="18" Height="18"/>
@@ -42,6 +47,11 @@
                         ToolTip="Add task" Margin="8,0,0,0">
                     <materialDesign:PackIcon Kind="Plus" Width="20" Height="20"/>
                 </Button>
+                <ComboBox DockPanel.Dock="Right" Width="80"
+                          ItemsSource="{Binding TypeOptions}"
+                          SelectedItem="{Binding NewTaskType}"
+                          Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                          Margin="8,0,0,0"/>
                 <ComboBox DockPanel.Dock="Right" Width="100"
                           ItemsSource="{Binding PriorityOptions}"
                           SelectedItem="{Binding NewTaskPriority}"
@@ -68,10 +78,16 @@
 
         <!-- Task list -->
         <ScrollViewer Padding="20,4,20,20" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding OpenTasks}">
+            <ItemsControl x:Name="TaskList"
+                          ItemsSource="{Binding OpenTasks}"
+                          AllowDrop="True"
+                          DragOver="TaskList_DragOver"
+                          Drop="TaskList_Drop">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:TaskViewModel}">
-                        <Border x:Name="TaskRow" Padding="12,8" Margin="0,2" CornerRadius="8" Background="Transparent">
+                        <Border x:Name="TaskRow" Padding="12,8" Margin="0,2" CornerRadius="8" Background="Transparent"
+                                PreviewMouseLeftButtonDown="TaskRow_PreviewMouseLeftButtonDown"
+                                PreviewMouseMove="TaskRow_PreviewMouseMove">
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Style.Triggers>
@@ -84,8 +100,14 @@
                             <DockPanel>
                                 <!-- Priority stripe -->
                                 <Rectangle DockPanel.Dock="Left" Width="3" Margin="0,0,12,0"
-                                           RadiusX="1.5" RadiusY="1.5"
-                                           Fill="{Binding Model.Priority, Converter={StaticResource PriorityToBrush}}"/>
+                                           RadiusX="1.5" RadiusY="1.5">
+                                    <Rectangle.Fill>
+                                        <MultiBinding Converter="{StaticResource PriorityTypeToBrush}">
+                                            <Binding Path="Model.Priority"/>
+                                            <Binding Path="Model.Type"/>
+                                        </MultiBinding>
+                                    </Rectangle.Fill>
+                                </Rectangle>
                                 <!-- Done checkbox -->
                                 <CheckBox DockPanel.Dock="Right"
                                           IsChecked="{Binding IsDone}"
@@ -99,9 +121,23 @@
                                         Visibility="{Binding IsEditing, Converter={StaticResource InvertBoolToVis}}">
                                     <materialDesign:PackIcon Kind="PencilOutline" Width="16" Height="16"/>
                                 </Button>
+                                <!-- Comment button (hidden while editing) -->
+                                <Button DockPanel.Dock="Right"
+                                        Style="{StaticResource MaterialDesignIconButton}"
+                                        Command="{Binding EditCommentCommand}"
+                                        ToolTip="Edit comment" Width="32" Height="32" Padding="6"
+                                        Visibility="{Binding IsEditing, Converter={StaticResource InvertBoolToVis}}">
+                                    <Grid Width="16" Height="16">
+                                        <materialDesign:PackIcon Kind="CommentText" Width="16" Height="16"
+                                                                 Visibility="{Binding HasComment, Converter={StaticResource BoolToVis}}"/>
+                                        <materialDesign:PackIcon Kind="CommentTextOutline" Width="16" Height="16"
+                                                                 Visibility="{Binding HasComment, Converter={StaticResource InvertBoolToVis}}"
+                                                                 Opacity="0.45"/>
+                                    </Grid>
+                                </Button>
 
                                 <Grid>
-                                    <!-- Display mode: struck through once checked, removed from the file on exit -->
+                                    <!-- Display mode -->
                                     <TextBlock Text="{Binding Model.Text}"
                                                VerticalAlignment="Center"
                                                TextWrapping="Wrap"
@@ -124,6 +160,11 @@
                                     <!-- Edit mode -->
                                     <DockPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                                            <ComboBox Width="80"
+                                                      ItemsSource="{Binding TypeOptions}"
+                                                      SelectedItem="{Binding EditType}"
+                                                      Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                                      Margin="0,0,4,0"/>
                                             <ComboBox Width="100"
                                                       ItemsSource="{Binding PriorityOptions}"
                                                       SelectedItem="{Binding EditPriority}"

@@ -15,6 +15,26 @@
                         <materialDesign:PackIcon Kind="Plus" Width="16" Height="16"/>
                     </Button>
                     <Button Style="{StaticResource MaterialDesignIconButton}"
+                            ToolTip="Link Existing Project" Click="LinkExisting_Click"
+                            Width="32" Height="32" Padding="4">
+                        <materialDesign:PackIcon Kind="FolderPlusOutline" Width="16" Height="16"/>
+                    </Button>
+                    <Button ToolTip="Toggle maybe-projects"
+                            Command="{Binding ToggleMaybeProjectsCommand}"
+                            Width="32" Height="32" Padding="4">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
+                                <Setter Property="Opacity" Value="0.4"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ShowMaybeProjects}" Value="True">
+                                        <Setter Property="Opacity" Value="1"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <materialDesign:PackIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
                             ToolTip="Settings" Click="Settings_Click"
                             Width="32" Height="32" Padding="4">
                         <materialDesign:PackIcon Kind="Cog" Width="16" Height="16"/>
@@ -53,17 +73,47 @@
                                                     <MenuItem Header="Open repository"
                                                               Command="{Binding OpenRepoCommand}"/>
                                                     <Separator/>
+                                                    <MenuItem Header="Rename..." Click="Rename_Click"/>
+                                                    <Separator/>
                                                     <MenuItem Header="Set root folder..." Click="SetRootFolder_Click"/>
                                                     <MenuItem Header="Reset root folder" Click="ResetRootFolder_Click"/>
                                                     <Separator/>
                                                     <MenuItem Header="Set repository link..." Click="SetRepoLink_Click"/>
                                                     <MenuItem Header="Remove repository link" Click="RemoveRepoLink_Click"/>
                                                     <Separator/>
+                                                    <MenuItem Header="Set state (STATE.md)..." Click="SetState_Click"/>
+                                                    <MenuItem Click="ToggleMaybe_Click">
+                                                        <MenuItem.Header>
+                                                            <TextBlock>
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Text" Value="Mark as Maybe"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsMaybe}" Value="True">
+                                                                                <Setter Property="Text" Value="Unmark as Maybe"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </MenuItem.Header>
+                                                    </MenuItem>
+                                                    <Separator/>
                                                     <MenuItem Header="Archive"
                                                               Command="{Binding ArchiveCommand}"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="Delete..." Click="Delete_Click"
+                                                              Foreground="#EF5350"/>
                                                 </ContextMenu>
                                             </Border.ContextMenu>
                                             <DockPanel>
+                                                <!-- Maybe-project badge -->
+                                                <Border DockPanel.Dock="Right"
+                                                        CornerRadius="8" Padding="5,1" Margin="4,0,0,0"
+                                                        Background="#33FFFFFF"
+                                                        Visibility="{Binding IsMaybe, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="?" FontSize="10" FontWeight="Bold" Opacity="0.7"/>
+                                                </Border>
                                                 <!-- Open task count badge -->
                                                 <Border DockPanel.Dock="Right"
                                                         CornerRadius="8" Padding="5,1" Margin="6,0,0,0"

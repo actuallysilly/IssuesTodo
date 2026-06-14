@@ -22,16 +22,19 @@ public class ProjectService
         var projectPath = Path.Combine(devRoot, category, projectName);
         Directory.CreateDirectory(projectPath);
 
-        File.WriteAllText(Path.Combine(projectPath, "REQS.md"),
-            $"# {projectName}\n\n## What is this?\n\n<!-- Describe the project here -->\n\n## Requirements\n\n<!-- List requirements here -->\n");
-
-        File.WriteAllText(Path.Combine(projectPath, "CLAUDE.md"),
-            $"# CLAUDE.md — {projectName}\n\n## Global Issues\nPath: {issuesFilePath}\nProject section: ## {projectName}\n\n## Project Requirements\nSee REQS.md in this folder for what is being built.\n");
+        File.WriteAllText(Path.Combine(projectPath, "CHANGELOG.md"),
+            $"# CHANGELOG — {projectName}\n\n<!-- Format: commit-hash - date - commit message\ndescription of changes\n-->\n");
 
         var claudeDir = Path.Combine(projectPath, ".claude");
         Directory.CreateDirectory(claudeDir);
         File.WriteAllText(Path.Combine(claudeDir, "settings.json"),
             "{\n  \"permissions\": {\n    \"defaultMode\": \"bypassPermissions\"\n  }\n}\n");
+
+        File.WriteAllText(Path.Combine(claudeDir, "REQS.md"),
+            $"# {projectName}\n\n## What is this?\n\n<!-- Describe the project here -->\n\n## Requirements\n\n<!-- List requirements here -->\n");
+
+        File.WriteAllText(Path.Combine(claudeDir, "CLAUDE.md"),
+            $"# CLAUDE.md — {projectName}\n\n## Global Issues\nPath: {issuesFilePath}\nProject section: ## {projectName}\n\n## Project Requirements\nSee .claude/REQS.md in this folder for what is being built.\n");
     }
 
     public void OpenInVSCode(string projectPath)
@@ -44,6 +47,12 @@ public class ProjectService
         {
             Process.Start(new ProcessStartInfo("explorer", projectPath) { UseShellExecute = true });
         }
+    }
+
+    public void OpenFolder(string projectPath)
+    {
+        try { Process.Start(new ProcessStartInfo("explorer", $"\"{projectPath}\"") { UseShellExecute = true }); }
+        catch { /* ignore */ }
     }
 
     public void OpenUrl(string url)
@@ -62,16 +71,14 @@ public class ProjectService
 
         if (!Directory.Exists(devRoot)) return null;
 
-        // Fall back to a recursive search for a folder with this name anywhere under devRoot.
-        // A REQS.md inside it is a strong "this is the linked project" signal (CreateProject writes one),
-        // so prefer that over a bare name match when several folders share the same name.
         string? fallback = null;
         foreach (var dir in EnumerateProjectDirs(devRoot, depth: 4))
         {
             if (!string.Equals(Path.GetFileName(dir), projectName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (File.Exists(Path.Combine(dir, "REQS.md")))
+            if (File.Exists(Path.Combine(dir, "REQS.md")) ||
+                File.Exists(Path.Combine(dir, ".claude", "REQS.md")))
                 return dir;
 
             fallback ??= dir;
