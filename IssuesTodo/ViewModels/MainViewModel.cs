@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using IssuesTodo.Models;
 using IssuesTodo.Services;
 
@@ -14,6 +15,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IssuesFileService _issues;
     private readonly FileWatcherService _watcher;
     private readonly ProjectService _projects;
+    private readonly RemindersService _reminders;
 
     [ObservableProperty] private ObservableCollection<CategoryViewModel> _categories = [];
     [ObservableProperty] private ProjectViewModel? _selectedProject;
@@ -25,6 +27,15 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private bool _nagVisible = false;
     [ObservableProperty] private string _nagMessage = "";
+
+    [ObservableProperty] private ObservableCollection<Reminder> _pendingReminders = [];
+    public bool HasPendingReminders => PendingReminders.Count > 0;
+
+    partial void OnPendingRemindersChanged(ObservableCollection<Reminder> value)
+    {
+        value.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPendingReminders));
+        OnPropertyChanged(nameof(HasPendingReminders));
+    }
 
     public bool ShowMaybeProjects => _settings.Current.ShowMaybeProjects;
 
@@ -39,12 +50,14 @@ public partial class MainViewModel : ObservableObject
     public AppSettings Settings => _settings.Current;
 
     public MainViewModel(SettingsService settings, IssuesFileService issues,
-                         FileWatcherService watcher, ProjectService projects)
+                         FileWatcherService watcher, ProjectService projects,
+                         RemindersService reminders)
     {
         _settings = settings;
         _issues = issues;
         _watcher = watcher;
         _projects = projects;
+        _reminders = reminders;
 
         _watcher.IssuesChanged += () => Application.Current.Dispatcher.Invoke(Reload);
     }
@@ -61,6 +74,45 @@ public partial class MainViewModel : ObservableObject
         _settings.Load();
         _watcher.Watch(_settings.Current.IssuesFilePath);
         Reload();
+        LoadPendingReminders();
+        StartReminderTimer();
+    }
+
+    private void StartReminderTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        timer.Tick += (_, _) => CheckReminders();
+        timer.Start();
+    }
+
+    private void CheckReminders()
+    {
+        var due = _reminders.PopDue(_settings.Current.RemindersFilePath);
+        foreach (var r in due)
+        {
+            Application.Current.MainWindow?.Activate();
+            MessageBox.Show(r.Text, "Reminder", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        if (due.Count > 0) LoadPendingReminders();
+    }
+
+    private void LoadPendingReminders()
+    {
+        var all = _reminders.Load(_settings.Current.RemindersFilePath);
+        PendingReminders = new ObservableCollection<Reminder>(all.OrderBy(r => r.DueAt));
+    }
+
+    public void AddReminder(string text, DateTime dueAt)
+    {
+        _reminders.Add(_settings.Current.RemindersFilePath, text, dueAt);
+        LoadPendingReminders();
+    }
+
+    [RelayCommand]
+    private void DismissReminder(Reminder r)
+    {
+        _reminders.Remove(_settings.Current.RemindersFilePath, r.Id);
+        PendingReminders.Remove(r);
     }
 
     private void Reload()
@@ -322,7 +374,7 @@ public partial class MainViewModel : ObservableObject
         dialog.ShowDialog();
     }
 
-    public void DeleteProject(ProjectViewModel pvm)
+    public void DeleteProject(ProjectViewModel pvm, string? alsoDeleteFolder = null)
     {
         _issues.DeleteProject(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name);
 
@@ -331,6 +383,9 @@ public partial class MainViewModel : ObservableObject
         _settings.Current.ProjectRepos.Remove(key);
         _settings.Current.ArchivedProjects.Remove(pvm.Name);
         _settings.Save();
+
+        if (!string.IsNullOrEmpty(alsoDeleteFolder) && Directory.Exists(alsoDeleteFolder))
+            Directory.Delete(alsoDeleteFolder, recursive: true);
         // FileWatcher triggers Reload
     }
 

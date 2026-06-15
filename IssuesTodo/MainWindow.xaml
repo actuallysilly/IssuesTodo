@@ -4,6 +4,7 @@
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:views="clr-namespace:IssuesTodo.Views"
         xmlns:vm="clr-namespace:IssuesTodo.ViewModels"
+        xmlns:models="clr-namespace:IssuesTodo.Models"
         Title="Issues.TODO" Height="720" Width="1100" MinWidth="700" MinHeight="400"
         Icon="Assets/issues-todo.ico"
         Style="{StaticResource MaterialDesignWindow}"
@@ -43,6 +44,41 @@
                                    FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     </StackPanel>
                 </DockPanel>
+            </Border>
+
+            <!-- Pending reminders -->
+            <Border DockPanel.Dock="Top"
+                    Visibility="{Binding HasPendingReminders, Converter={StaticResource BoolToVis}}"
+                    Margin="20,12,20,0" Padding="16,10" CornerRadius="8"
+                    Background="{DynamicResource MaterialDesign.Brush.Card.Background}">
+                <StackPanel>
+                    <TextBlock Text="Reminders"
+                               Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                               Opacity="0.6" Margin="0,0,0,6"/>
+                    <ItemsControl ItemsSource="{Binding PendingReminders}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:Reminder}">
+                                <DockPanel Margin="0,3">
+                                    <Button DockPanel.Dock="Right"
+                                            Style="{StaticResource MaterialDesignIconButton}"
+                                            Command="{Binding DataContext.DismissReminderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            Width="28" Height="28" Padding="4" ToolTip="Dismiss">
+                                        <materialDesign:PackIcon Kind="BellOffOutline" Width="14" Height="14"/>
+                                    </Button>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Text}"
+                                                   Style="{StaticResource MaterialDesignBody2TextBlock}"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding DueAt, StringFormat='Due: {0:g}'}"
+                                                   Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                                   Opacity="0.6"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </Border>
 
             <!-- General todo — pinned above all project-based tasks -->

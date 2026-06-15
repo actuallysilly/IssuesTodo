@@ -20,6 +20,7 @@ public partial class App : Application
         collection.AddSingleton<FileWatcherService>();
         collection.AddSingleton<ProjectService>();
         collection.AddSingleton<ThemeService>();
+        collection.AddSingleton<RemindersService>();
         collection.AddSingleton<MainViewModel>();
         collection.AddTransient<MainWindow>();
 

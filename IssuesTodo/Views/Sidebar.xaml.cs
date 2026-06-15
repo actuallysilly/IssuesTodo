@@ -124,6 +124,14 @@ public partial class Sidebar : UserControl
             VM.ToggleMaybeProject(pvm);
     }
 
+    private void AddReminder_Click(object sender, RoutedEventArgs e)
+    {
+        if (VM == null) return;
+        var dialog = new AddReminderDialog { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() == true)
+            VM.AddReminder(dialog.ReminderText, dialog.DueAt);
+    }
+
     private void Delete_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ProjectViewModel pvm || VM == null) return;
@@ -134,7 +142,20 @@ public partial class Sidebar : UserControl
             System.Windows.MessageBoxButton.OKCancel,
             System.Windows.MessageBoxImage.Warning);
 
-        if (result == System.Windows.MessageBoxResult.OK)
-            VM.DeleteProject(pvm);
+        if (result != System.Windows.MessageBoxResult.OK) return;
+
+        string? folderToDelete = null;
+        if (!string.IsNullOrEmpty(pvm.FolderPath) && System.IO.Directory.Exists(pvm.FolderPath))
+        {
+            var r2 = System.Windows.MessageBox.Show(
+                $"Also delete the folder from disk?\n{pvm.FolderPath}",
+                "Delete folder",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+            if (r2 == System.Windows.MessageBoxResult.Yes)
+                folderToDelete = pvm.FolderPath;
+        }
+
+        VM.DeleteProject(pvm, folderToDelete);
     }
 }

@@ -35,6 +35,11 @@
                         <materialDesign:PackIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
                     </Button>
                     <Button Style="{StaticResource MaterialDesignIconButton}"
+                            ToolTip="Add reminder" Click="AddReminder_Click"
+                            Width="32" Height="32" Padding="4">
+                        <materialDesign:PackIcon Kind="BellPlusOutline" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
                             ToolTip="Settings" Click="Settings_Click"
                             Width="32" Height="32" Padding="4">
                         <materialDesign:PackIcon Kind="Cog" Width="16" Height="16"/>

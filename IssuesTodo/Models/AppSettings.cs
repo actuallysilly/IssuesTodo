@@ -25,4 +25,6 @@ public class AppSettings
     // "never", "1w", "2w", "1month"
     public string ReviewFrequency { get; set; } = "1month";
     public string LastReviewReminder { get; set; } = "";
+
+    public string RemindersFilePath { get; set; } = @"D:\dev\Smaller\IssuesTodo\reminders.json";
 }

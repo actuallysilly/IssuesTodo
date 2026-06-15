@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
 
         DevRootBox.Text = vm.Settings.DevRoot;
         IssuesPathBox.Text = vm.Settings.IssuesFilePath;
+        StartWithWindowsBox.IsChecked = IsStartWithWindowsEnabled();
 
         ThemeBox.ItemsSource = ThemePresets.All;
         ThemeBox.SelectedItem = _originalTheme;
@@ -164,18 +165,40 @@ public partial class SettingsWindow : Window
         return string.Join("+", parts);
     }
 
+    private static bool IsStartWithWindowsEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
+        return key?.GetValue("IssuesTodo") != null;
+    }
+
+    private static void SetStartWithWindows(bool enable)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", writable: true);
+        if (key == null) return;
+        if (enable)
+        {
+            var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "";
+            key.SetValue("IssuesTodo", $"\"{exePath}\"");
+        }
+        else
+        {
+            key.DeleteValue("IssuesTodo", throwOnMissingValue: false);
+        }
+    }
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         _vm.Settings.DevRoot = DevRootBox.Text.Trim();
         _vm.Settings.IssuesFilePath = IssuesPathBox.Text.Trim();
-        _vm.Settings.DoneFilePath = System.IO.Path.Combine(
-            System.IO.Path.GetDirectoryName(IssuesPathBox.Text.Trim()) ?? "",
-            "issues.done.json");
+        var issuesDir = System.IO.Path.GetDirectoryName(IssuesPathBox.Text.Trim()) ?? "";
+        _vm.Settings.DoneFilePath = System.IO.Path.Combine(issuesDir, "issues.done.json");
+        _vm.Settings.RemindersFilePath = System.IO.Path.Combine(issuesDir, "reminders.json");
         if (ThemeBox.SelectedItem is ThemePreset preset) _vm.Settings.Theme = preset.Name;
         _vm.Settings.HotkeyModifiers  = _capturedMods;
         _vm.Settings.HotkeyVirtualKey = _capturedVk;
         if (ReviewFreqBox.SelectedItem is ReviewFreqOption freq)
             _vm.Settings.ReviewFrequency = freq.Value;
+        SetStartWithWindows(StartWithWindowsBox.IsChecked == true);
         _vm.ApplySettings();
         ((MainWindow)Application.Current.MainWindow!).ReregisterHotkey(_capturedMods, _capturedVk);
         DialogResult = true;
