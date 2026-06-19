@@ -1,6 +1,6 @@
 namespace IssuesTodo.Models;
 
-public enum TaskPriority { Normal, High, Low, Optional }
+public enum TaskPriority { Normal, High, Low, Optional, Urgent }
 public enum TaskType { Dev, Human }
 
 public class TaskItem
@@ -11,4 +11,5 @@ public class TaskItem
     public TaskPriority Priority { get; init; }
     public TaskType Type { get; init; }
     public string? Comment { get; init; }
+    public bool IsDoneInFile { get; init; }
 }

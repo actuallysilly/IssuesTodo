@@ -80,6 +80,17 @@
         <CheckBox x:Name="StartWithWindowsBox" Content="Start with Windows (run in tray on login)"
                   Margin="0,0,0,16"/>
 
+        <!-- Scaffolding templates -->
+        <Button Content="EDIT PROJECT SCAFFOLDING TEMPLATES..."
+                Style="{StaticResource MaterialDesignOutlinedButton}"
+                HorizontalAlignment="Left" Click="EditScaffolding_Click" Margin="0,0,0,16"/>
+
+        <!-- Urgent annoyance level -->
+        <ComboBox x:Name="UrgentAnnoyanceBox" Margin="0,0,0,16"
+                  materialDesign:HintAssist.Hint="Urgent task annoyance level"
+                  materialDesign:HintAssist.IsFloating="True"
+                  Style="{StaticResource MaterialDesignOutlinedComboBox}"/>
+
         <!-- Archived projects -->
         <TextBlock Text="Archived projects"
                    Style="{StaticResource MaterialDesignCaptionTextBlock}"

@@ -17,24 +17,40 @@ public class ProjectService
         return found;
     }
 
-    public void CreateProject(string devRoot, string category, string projectName, string issuesFilePath)
+    public void CreateProject(string devRoot, string category, string projectName, string issuesFilePath,
+        Dictionary<string, string> templates)
     {
         var projectPath = Path.Combine(devRoot, category, projectName);
         Directory.CreateDirectory(projectPath);
 
-        File.WriteAllText(Path.Combine(projectPath, "CHANGELOG.md"),
-            $"# CHANGELOG — {projectName}\n\n<!-- Format: commit-hash - date - commit message\ndescription of changes\n-->\n");
+        foreach (var (relativePath, content) in templates)
+        {
+            var fullPath = Path.Combine(projectPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var dir = Path.GetDirectoryName(fullPath);
+            if (dir != null) Directory.CreateDirectory(dir);
+            var rendered = content
+                .Replace("{{ProjectName}}", projectName)
+                .Replace("{{IssuesFilePath}}", issuesFilePath);
+            File.WriteAllText(fullPath, rendered, System.Text.Encoding.UTF8);
+        }
+    }
 
-        var claudeDir = Path.Combine(projectPath, ".claude");
-        Directory.CreateDirectory(claudeDir);
-        File.WriteAllText(Path.Combine(claudeDir, "settings.json"),
-            "{\n  \"permissions\": {\n    \"defaultMode\": \"bypassPermissions\"\n  }\n}\n");
-
-        File.WriteAllText(Path.Combine(claudeDir, "REQS.md"),
-            $"# {projectName}\n\n## What is this?\n\n<!-- Describe the project here -->\n\n## Requirements\n\n<!-- List requirements here -->\n");
-
-        File.WriteAllText(Path.Combine(claudeDir, "CLAUDE.md"),
-            $"# CLAUDE.md — {projectName}\n\n## Global Issues\nPath: {issuesFilePath}\nProject section: ## {projectName}\n\n## Project Requirements\nSee .claude/REQS.md in this folder for what is being built.\n");
+    public void CreateGitHubRepo(string projectPath, string projectName)
+    {
+        void Run(string exe, string args)
+        {
+            var p = Process.Start(new ProcessStartInfo(exe, args)
+            {
+                WorkingDirectory = projectPath,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            p?.WaitForExit();
+        }
+        Run("git", "init");
+        Run("git", "add .");
+        Run("git", "commit -m \"Initial commit\"");
+        Run("gh", $"repo create {projectName} --private --source=. --push");
     }
 
     public void OpenInVSCode(string projectPath)

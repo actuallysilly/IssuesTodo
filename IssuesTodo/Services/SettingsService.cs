@@ -23,6 +23,9 @@ public class SettingsService
             Current = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts) ?? new AppSettings();
         }
         catch { Current = new AppSettings(); }
+
+        foreach (var (key, value) in AppSettings.DefaultScaffolding())
+            Current.ScaffoldingTemplates.TryAdd(key, value);
     }
 
     public void Save()

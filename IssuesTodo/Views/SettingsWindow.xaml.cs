@@ -52,6 +52,9 @@ public partial class SettingsWindow : Window
         ReviewFreqBox.SelectedItem = FreqOptions.FirstOrDefault(o => o.Value == vm.Settings.ReviewFrequency)
                                      ?? FreqOptions.Last();
 
+        UrgentAnnoyanceBox.ItemsSource = new[] { "Default" };
+        UrgentAnnoyanceBox.SelectedItem = vm.Settings.UrgentAnnoyanceLevel;
+
         RefreshArchivedList();
 
         // Revert the live preview if the dialog is dismissed without saving
@@ -199,9 +202,18 @@ public partial class SettingsWindow : Window
         if (ReviewFreqBox.SelectedItem is ReviewFreqOption freq)
             _vm.Settings.ReviewFrequency = freq.Value;
         SetStartWithWindows(StartWithWindowsBox.IsChecked == true);
+        if (UrgentAnnoyanceBox.SelectedItem is string level)
+            _vm.Settings.UrgentAnnoyanceLevel = level;
         _vm.ApplySettings();
         ((MainWindow)Application.Current.MainWindow!).ReregisterHotkey(_capturedMods, _capturedVk);
         DialogResult = true;
+    }
+
+    private void EditScaffolding_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ScaffoldingEditorDialog(_vm.Settings.ScaffoldingTemplates) { Owner = this };
+        if (dialog.ShowDialog() == true)
+            _vm.Settings.ScaffoldingTemplates = dialog.Result;
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;

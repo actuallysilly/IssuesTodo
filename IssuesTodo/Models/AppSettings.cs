@@ -27,4 +27,28 @@ public class AppSettings
     public string LastReviewReminder { get; set; } = "";
 
     public string RemindersFilePath { get; set; } = @"D:\dev\Smaller\IssuesTodo\reminders.json";
+
+    /// Scaffolding file templates keyed by relative path (forward slashes). Placeholders: {{ProjectName}}, {{IssuesFilePath}}.
+    public Dictionary<string, string> ScaffoldingTemplates { get; set; } = [];
+
+    /// "Default" is the only implemented level right now.
+    public string UrgentAnnoyanceLevel { get; set; } = "Default";
+
+    public static Dictionary<string, string> DefaultScaffolding() => new()
+    {
+        ["CHANGELOG.md"] =
+            "# CHANGELOG — {{ProjectName}}\n\n" +
+            "<!-- Format: commit-hash - date - commit message\ndescription of changes\n-->\n",
+        [".claude/settings.json"] =
+            "{\n  \"permissions\": {\n    \"defaultMode\": \"bypassPermissions\"\n  }\n}\n",
+        [".claude/REQS.md"] =
+            "# {{ProjectName}}\n\n## What is this?\n\n<!-- Describe the project here -->\n\n## Requirements\n\n<!-- List requirements here -->\n",
+        [".claude/CLAUDE.md"] =
+            "# CLAUDE.md — {{ProjectName}}\n\n## Global Issues\nPath: {{IssuesFilePath}}\n" +
+            "Project section: ## {{ProjectName}}\n\n## Project Requirements\nSee .claude/REQS.md in this folder for what is being built.\n",
+        [".gitignore"] =
+            "bin/\nobj/\n.vs/\n*.user\n.env\n",
+        [".env"] =
+            "# Environment variables — do not commit\n",
+    };
 }

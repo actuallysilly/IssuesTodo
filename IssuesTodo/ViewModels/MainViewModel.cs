@@ -16,6 +16,7 @@ public partial class MainViewModel : ObservableObject
     private readonly FileWatcherService _watcher;
     private readonly ProjectService _projects;
     private readonly RemindersService _reminders;
+    private readonly NotificationService _notifications;
 
     [ObservableProperty] private ObservableCollection<CategoryViewModel> _categories = [];
     [ObservableProperty] private ProjectViewModel? _selectedProject;
@@ -45,19 +46,21 @@ public partial class MainViewModel : ObservableObject
     private readonly Dictionary<string, bool> _pendingToggles = new();
     private bool _nagDismissed = false;
     private List<CategoryGroup> _allParsedCategories = [];
+    private DateTime _lastUrgentFire = DateTime.MinValue;
 
     public bool HasSelectedProject => SelectedProject != null;
     public AppSettings Settings => _settings.Current;
 
     public MainViewModel(SettingsService settings, IssuesFileService issues,
                          FileWatcherService watcher, ProjectService projects,
-                         RemindersService reminders)
+                         RemindersService reminders, NotificationService notifications)
     {
         _settings = settings;
         _issues = issues;
         _watcher = watcher;
         _projects = projects;
         _reminders = reminders;
+        _notifications = notifications;
 
         _watcher.IssuesChanged += () => Application.Current.Dispatcher.Invoke(Reload);
     }
@@ -94,6 +97,29 @@ public partial class MainViewModel : ObservableObject
             MessageBox.Show(r.Text, "Reminder", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         if (due.Count > 0) LoadPendingReminders();
+
+        CheckUrgentTasks();
+    }
+
+    private void CheckUrgentTasks()
+    {
+        var now = DateTime.Now;
+        var windowStart = now.Date.AddHours(2).AddMinutes(5);
+        var windowEnd   = now.Date.AddHours(6);
+        if (now < windowStart || now > windowEnd) return;
+        if ((now - _lastUrgentFire).TotalMinutes < 55) return;
+
+        var urgent = _allParsedCategories
+            .SelectMany(c => c.Projects)
+            .SelectMany(p => p.Tasks)
+            .Where(t => t.Priority == TaskPriority.Urgent && !t.IsDoneInFile)
+            .ToList();
+        if (urgent.Count == 0) return;
+
+        _lastUrgentFire = now;
+        var names = string.Join("\n", urgent.Take(5).Select(t => $"• {t.Text}"));
+        if (urgent.Count > 5) names += $"\n+ {urgent.Count - 5} more";
+        _notifications.ShowUrgent("URGENT — DO YOUR TASKS", names);
     }
 
     private void LoadPendingReminders()
@@ -168,7 +194,7 @@ public partial class MainViewModel : ObservableObject
                     foreach (var task in proj.Tasks)
                     {
                         var capturedTask = capturedPvm;
-                        var wasAlreadyDone = doneSet.Contains(task.Id);
+                        var wasAlreadyDone = doneSet.Contains(task.Id) || task.IsDoneInFile;
                         var isDone = _pendingToggles.TryGetValue(task.Id, out var pending) ? pending : wasAlreadyDone;
 
                         capturedPvm.Tasks.Add(new TaskViewModel(task, isDone, wasAlreadyDone,
@@ -177,7 +203,12 @@ public partial class MainViewModel : ObservableObject
                                 if (isDoneNow)
                                 {
                                     _issues.MarkDone(_settings.Current.DoneFilePath, t.Model);
-                                    _issues.RemoveTask(_settings.Current.IssuesFilePath, capturedTask.Category, capturedTask.Name, t.Model.Text);
+                                    _issues.MarkDoneInFile(_settings.Current.IssuesFilePath, capturedTask.Category, capturedTask.Name, t.Model);
+                                }
+                                else
+                                {
+                                    _issues.UnmarkDone(_settings.Current.DoneFilePath, t.Model.Id);
+                                    _issues.UnmarkDoneInFile(_settings.Current.IssuesFilePath, capturedTask.Category, capturedTask.Name, t.Model);
                                 }
                                 capturedTask.Refresh();
                             },
@@ -319,11 +350,12 @@ public partial class MainViewModel : ObservableObject
                 if (task.IsDone)
                 {
                     _issues.MarkDone(_settings.Current.DoneFilePath, task.Model);
-                    _issues.RemoveTask(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, task.Model.Text);
+                    _issues.MarkDoneInFile(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, task.Model);
                 }
                 else
                 {
                     _issues.UnmarkDone(_settings.Current.DoneFilePath, task.Model.Id);
+                    _issues.UnmarkDoneInFile(_settings.Current.IssuesFilePath, pvm.Category, pvm.Name, task.Model);
                 }
             }
         }
@@ -438,10 +470,13 @@ public partial class MainViewModel : ObservableObject
         // FileWatcher triggers Reload
     }
 
-    public void CreateProject(string category, string name)
+    public void CreateProject(string category, string name, bool createGitHubRepo = false)
     {
-        _projects.CreateProject(_settings.Current.DevRoot, category, name, _settings.Current.IssuesFilePath);
+        var devRoot = _settings.Current.DevRoot;
+        _projects.CreateProject(devRoot, category, name, _settings.Current.IssuesFilePath, _settings.Current.ScaffoldingTemplates);
         _issues.AddProject(_settings.Current.IssuesFilePath, category, name);
+        if (createGitHubRepo)
+            _projects.CreateGitHubRepo(System.IO.Path.Combine(devRoot, category, name), name);
     }
 
     public void LinkExistingProject(string category, string name, string? folderPath)

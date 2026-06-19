@@ -21,6 +21,7 @@ public partial class App : Application
         collection.AddSingleton<ProjectService>();
         collection.AddSingleton<ThemeService>();
         collection.AddSingleton<RemindersService>();
+        collection.AddSingleton<NotificationService>();
         collection.AddSingleton<MainViewModel>();
         collection.AddTransient<MainWindow>();
 
@@ -53,6 +54,7 @@ public partial class App : Application
             Text = "Issues.TODO"
         };
 
+        Services.GetRequiredService<NotificationService>().SetTrayIcon(_trayIcon);
         _trayIcon.DoubleClick += (_, _) => window.BringToFront();
 
         var menu = new System.Windows.Forms.ContextMenuStrip();

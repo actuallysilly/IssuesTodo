@@ -10,6 +10,7 @@ public partial class NewProjectDialog : Window
     public string SelectedCategory => CategoryBox.Text.Trim();
     public string ProjectName => NameBox.Text.Trim();
     public string? FolderPath => string.IsNullOrWhiteSpace(FolderBox.Text) ? null : FolderBox.Text.Trim();
+    public bool CreateRepo => CreateRepoBox.IsChecked == true;
 
     private readonly bool _linkMode;
 
@@ -22,6 +23,7 @@ public partial class NewProjectDialog : Window
         HeadingText.Text = linkMode ? "Link Existing Project" : "New Project";
         AcceptButton.Content = linkMode ? "LINK" : "CREATE";
         FolderPanel.Visibility = linkMode ? Visibility.Visible : Visibility.Collapsed;
+        CreateRepoBox.Visibility = linkMode ? Visibility.Collapsed : Visibility.Visible;
 
         foreach (var cat in existingCategories)
             CategoryBox.Items.Add(cat);

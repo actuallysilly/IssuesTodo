@@ -15,6 +15,7 @@ public class PriorityTypeToBrushConverter : IMultiValueConverter
         bool human = t == TaskType.Human;
         return p switch
         {
+            TaskPriority.Urgent   => Brush(human ? (136, 14,  79)  : (240, 98,  146)),  // dark-pink / hot-pink
             TaskPriority.High     => Brush(human ? (183, 28,  28)  : (239, 83,  80)),   // dark-red / red
             TaskPriority.Low      => Brush(human ? (27,  94,  32)  : (102, 187, 106)),  // dark-green / green
             TaskPriority.Optional => Brush(human ? (245, 127, 23)  : (255, 213, 79)),   // dark-amber / yellow

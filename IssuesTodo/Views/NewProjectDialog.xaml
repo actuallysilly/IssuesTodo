@@ -36,6 +36,10 @@
                      Style="{StaticResource MaterialDesignOutlinedTextBox}"/>
         </DockPanel>
 
+        <!-- GitHub repo toggle (create mode only) -->
+        <CheckBox x:Name="CreateRepoBox" Content="Create private GitHub repository"
+                  Margin="0,0,0,12"/>
+
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="CANCEL"
                     Style="{StaticResource MaterialDesignFlatButton}"

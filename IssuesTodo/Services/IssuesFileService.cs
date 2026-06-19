@@ -41,7 +41,7 @@ public class IssuesFileService
         Project? currentProj = null;
 
         // Buffered task: collect comment lines before flushing
-        (string id, string text, TaskPriority priority, TaskType type)? pendingTask = null;
+        (string id, string text, TaskPriority priority, TaskType type, bool isDoneInFile)? pendingTask = null;
         var pendingComment = new List<string>();
 
         void FlushPendingTask()
@@ -57,7 +57,8 @@ public class IssuesFileService
                 ProjectName = currentProj.Name,
                 Priority = pendingTask.Value.priority,
                 Type = pendingTask.Value.type,
-                Comment = comment
+                Comment = comment,
+                IsDoneInFile = pendingTask.Value.isDoneInFile
             });
             pendingTask = null;
             pendingComment.Clear();
@@ -111,8 +112,10 @@ public class IssuesFileService
             if (TryParseTaskPrefix(trimmed, out var priority, out var rawText))
             {
                 FlushPendingTask();
+                var isDoneInFile = rawText.StartsWith(DoneMarker, StringComparison.Ordinal);
+                if (isDoneInFile) rawText = rawText[DoneMarker.Length..];
                 var (displayText, taskType) = ParseTaskText(rawText);
-                pendingTask = (ComputeId(currentProj.Name, displayText), displayText, priority, taskType);
+                pendingTask = (ComputeId(currentProj.Name, displayText), displayText, priority, taskType, isDoneInFile);
                 continue;
             }
 
@@ -128,8 +131,11 @@ public class IssuesFileService
         return categories;
     }
 
+    private const string DoneMarker = "DONE: ";
+
     private static bool TryParseTaskPrefix(string trimmed, out TaskPriority priority, out string text)
     {
+        if (trimmed.StartsWith("-up ", StringComparison.Ordinal)) { priority = TaskPriority.Urgent;   text = trimmed[4..]; return true; }
         if (trimmed.StartsWith("-hp ", StringComparison.Ordinal)) { priority = TaskPriority.High;     text = trimmed[4..]; return true; }
         if (trimmed.StartsWith("-lp ", StringComparison.Ordinal)) { priority = TaskPriority.Low;      text = trimmed[4..]; return true; }
         if (trimmed.StartsWith("-ep ", StringComparison.Ordinal)) { priority = TaskPriority.Optional; text = trimmed[4..]; return true; }
@@ -270,6 +276,48 @@ public class IssuesFileService
                 removeCount++;
 
             lines.RemoveRange(i, removeCount);
+            File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
+            return;
+        }
+    }
+
+    public void MarkDoneInFile(string issuesPath, string category, string projectName, TaskItem task)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
+        if (projIndex < 0) return;
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
+        for (int i = projIndex + 1; i < sectionEnd; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (!TryParseTaskPrefix(trimmed, out var priority, out var rawText)) continue;
+            if (rawText.StartsWith(DoneMarker, StringComparison.Ordinal)) continue;
+            var (displayText, _) = ParseTaskText(rawText);
+            if (displayText != task.Text) continue;
+            lines[i] = PriorityPrefix(priority) + DoneMarker + EncodeTaskText(task.Text, task.Type);
+            File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
+            return;
+        }
+    }
+
+    public void UnmarkDoneInFile(string issuesPath, string category, string projectName, TaskItem task)
+    {
+        var lines = File.ReadAllLines(issuesPath, Encoding.UTF8).ToList();
+        var catIndex = lines.FindIndex(l => l.TrimEnd() == $"# {category}");
+        if (catIndex < 0) return;
+        int projIndex = FindProjectIndex(lines, catIndex, projectName);
+        if (projIndex < 0) return;
+        int sectionEnd = ProjectSectionEnd(lines, projIndex);
+        for (int i = projIndex + 1; i < sectionEnd; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (!TryParseTaskPrefix(trimmed, out var priority, out var rawText)) continue;
+            if (!rawText.StartsWith(DoneMarker, StringComparison.Ordinal)) continue;
+            var (displayText, _) = ParseTaskText(rawText[DoneMarker.Length..]);
+            if (displayText != task.Text) continue;
+            lines[i] = PriorityPrefix(priority) + EncodeTaskText(task.Text, task.Type);
             File.WriteAllLines(issuesPath, lines, Encoding.UTF8);
             return;
         }
@@ -527,6 +575,7 @@ public class IssuesFileService
 
     private static string PriorityPrefix(TaskPriority priority) => priority switch
     {
+        TaskPriority.Urgent   => "-up ",
         TaskPriority.High     => "-hp ",
         TaskPriority.Low      => "-lp ",
         TaskPriority.Optional => "-ep ",

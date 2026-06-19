@@ -26,7 +26,7 @@ public partial class Sidebar : UserControl
         var dialog = new NewProjectDialog(VM?.ExistingCategories ?? [], linkMode: false)
             { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() == true)
-            VM?.CreateProject(dialog.SelectedCategory, dialog.ProjectName);
+            VM?.CreateProject(dialog.SelectedCategory, dialog.ProjectName, dialog.CreateRepo);
     }
 
     private void LinkExisting_Click(object sender, RoutedEventArgs e)

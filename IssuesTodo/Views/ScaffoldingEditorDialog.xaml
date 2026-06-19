@@ -1,0 +1,65 @@
+<Window x:Class="IssuesTodo.Views.ScaffoldingEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        Title="Edit Scaffolding Templates" Width="800" Height="560"
+        ResizeMode="CanResize" WindowStartupLocation="CenterOwner"
+        Style="{StaticResource MaterialDesignWindow}"
+        TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
+        Background="{DynamicResource MaterialDesign.Brush.Background}">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="RESET DEFAULTS"
+                    Style="{StaticResource MaterialDesignFlatButton}"
+                    Click="ResetDefaults_Click" Margin="0,0,8,0"/>
+            <Button Content="CANCEL"
+                    Style="{StaticResource MaterialDesignFlatButton}"
+                    Click="Cancel_Click" Margin="0,0,8,0"/>
+            <Button Content="SAVE"
+                    Style="{StaticResource MaterialDesignRaisedButton}"
+                    Click="Save_Click"/>
+        </StackPanel>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0">
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
+                            ToolTip="Add file" Click="AddFile_Click" Width="32" Height="32" Padding="4">
+                        <materialDesign:PackIcon Kind="Plus" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource MaterialDesignIconButton}"
+                            ToolTip="Remove file" Click="RemoveFile_Click" Width="32" Height="32" Padding="4">
+                        <materialDesign:PackIcon Kind="Minus" Width="16" Height="16"/>
+                    </Button>
+                </StackPanel>
+                <ListBox x:Name="FileList" SelectionChanged="FileList_SelectionChanged"
+                         Style="{StaticResource MaterialDesignListBox}"
+                         BorderBrush="{DynamicResource MaterialDesign.Brush.TextBox.HoverBackground}"
+                         BorderThickness="1"/>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+            <DockPanel Grid.Column="2">
+                <TextBlock x:Name="FilePathLabel" DockPanel.Dock="Top"
+                           Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                           Opacity="0.55" Margin="0,0,0,8" Text="Select a file to edit"/>
+                <TextBox x:Name="ContentBox"
+                         AcceptsReturn="True" AcceptsTab="True"
+                         TextWrapping="NoWrap" FontFamily="Consolas,Courier New" FontSize="13"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         materialDesign:HintAssist.Hint="File content — use {{ProjectName}} and {{IssuesFilePath}} as placeholders"
+                         materialDesign:HintAssist.IsFloating="True"
+                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                         VerticalContentAlignment="Top" IsEnabled="False"
+                         TextChanged="ContentBox_TextChanged"/>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>
